@@ -22,6 +22,7 @@ class Radio(object):
     self.done      = False
     self._state    = Radio._STATE_VOLUME
     self._stations = []
+    self._i2s_pid  = None
 
   # --- start radio   --------------------------------------------------------
 
@@ -30,7 +31,7 @@ class Radio(object):
 
     rc = subprocess.call([Radio._RADIO_CLI,"-b","D","-o",str(self._i2s)])
     print("start return-code: %d" % rc)
-    
+
   # --- stop radio   --------------------------------------------------------
 
   def stop(self):
@@ -42,7 +43,7 @@ class Radio(object):
     self.save_settings()
     if self._i2s_pid is not None and self._i2s_pid.poll():
       self._i2s_pid.kill()
-    
+
   # --- read settings   ------------------------------------------------------
 
   def read_settings(self):
@@ -54,6 +55,7 @@ class Radio(object):
         settings = json.load(f)
       self._value = [settings['volume'],settings['station']]
     else:
+      settings = {}
       self._value = [25,0]      # [volume,station]
 
     # check i2s-attribute
@@ -113,7 +115,7 @@ class Radio(object):
     for ensemble in dabinfo["ensembleList"]:
 
       # parse ensemble if valid
-      if ensemble["DigradStatus"]["valid"]:
+      if ensemble["DigradStatus"]["valid"] and "DigitalServiceList" in ensemble:
         services = ensemble["DigitalServiceList"]["ServiceList"]
         tune_idx = ensemble["DigradStatus"]["tune_index"]
         for service in services:
@@ -137,7 +139,7 @@ class Radio(object):
     vol = min(vol,self._vol_max)
     vol = max(vol,0)
     self._value[Radio._STATE_VOLUME] = vol
-    
+
     print("updating volume to %d" % vol)
     args = shlex.split(self._cmd_vol.format(vol))
     rc = subprocess.call(args)
@@ -151,9 +153,11 @@ class Radio(object):
     if self._i2s and  (
       self._i2s_pid is None or self._i2s_pid.poll() is not None):
       # and start playing
-      args = shlex.split(self._i2s_play_cmd)
-      print("starting to play with %r",(args,))
-      self._i2s_pid = subprocess.Popen(args,shell=True)
+      # args = shlex.split(self._i2s_play_cmd)
+      print("starting to play with %r" % self._i2s_play_cmd)
+      #self._i2s_pid = subprocess.Popen(args,shell=True)
+      # Pass the raw string command directly
+      self._i2s_pid = subprocess.Popen(self._i2s_play_cmd, shell=True)
 
     # wrap around
     idx = self._value[Radio._STATE_TUNER]
@@ -178,7 +182,7 @@ class Radio(object):
     """
     devices = [evdev.InputDevice(fn) for fn in evdev.list_devices()]
     devices = {dev.fd: dev for dev in devices}
-  
+
     while not self.done:
       fds, _1, _2 = select.select(devices, [], [])
       for fd in fds:
